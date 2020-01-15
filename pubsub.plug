@@ -1,0 +1,9 @@
+[Core]
+Name = Pubsub
+Module = pubsub
+
+[Documentation]
+Description = This plugin allows errbot to subscribe to google pubsub.
+
+[Python]
+Version = 3
