@@ -143,7 +143,8 @@ class PubSub(BotPlugin):
         super().activate()
         pm = self._bot.plugin_manager
         plugs = pm.get_all_active_plugins()
-        self.logger.info(plugs)
+        print("TEST")
+        print(plugs)
         for p in plugs:
             self.find_subs(p)
 
