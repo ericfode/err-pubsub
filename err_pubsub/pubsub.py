@@ -146,10 +146,11 @@ class PubSub(BotPlugin):
         for p in plugs:
             self.find_subs(p)
 
-        for sub in self.subs:
-            self.log.info('listening to topic: {topic} and sub: {sub}'.format(
-                topic=sub.topic_name, sub=sub.subscription_name))
-            try:
-                sub.activate(self.subscriber)
-            except Exception:
-                self.log.exception('Starting subscriber failed')
+        if self.sub is not None:
+            for sub in self.subs:
+                self.log.info('listening to topic: {topic} and sub: {sub}'.format(
+                    topic=sub.topic_name, sub=sub.subscription_name))
+                try:
+                    sub.activate(self.subscriber)
+                except Exception:
+                    self.log.exception('Starting subscriber failed')
