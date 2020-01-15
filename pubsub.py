@@ -111,6 +111,7 @@ class PubSub(BotPlugin):
 
     def configure(self, configuration: typing.Mapping) -> None:
         print("CONFIGURE")
+        print("CONFIG: ", configuration)
         self.config = configuration
         if 'SERVICE_ACCOUNT_JSON' in self.config:
             self.service_account_info = json.load(open(self.config['SERVICE_ACCOUNT_JSON']))
