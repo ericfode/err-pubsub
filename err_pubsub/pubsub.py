@@ -14,8 +14,8 @@ from typing import Callable
 
 def _tag_subhook(func, project, sub):
     log.info(f"webhooks:  Flag to bind {sub} to {getattr(func, '__name__', func)}")
-    func._err_pubsub_sub = project
-    func._err_pubsub_project = sub
+    func._err_pubsub_sub =sub 
+    func._err_pubsub_project = project
     return func
 
 
@@ -72,6 +72,7 @@ class Sub():
     def activate(self, subscriber):
         print("creating sub")
         print("activating sub")
+        print(self.subscription_name)
         subscriber.subscribe(self.subscription_name,
                             self.callback)
 
@@ -112,20 +113,20 @@ class PubSub(BotPlugin):
         """Zap everything for unittests"""
         # TODO: Maybe we should unsubsribe?
         self.subscriber = pubsub_v1.SubscriberClient()
-        self.subs = []
+        self.subs = {}
 
     def find_subs(self, obj):
         """Checks a plugin for sns listeners and attaches callbacks if they are needed"""
         classname = obj.__class__.__name__
         print("Checking %s for pubsub hooks", classname)
         for name, func in getmembers(obj, ismethod):
-            if getattr(func, '_err_pubsub_topic', False): # False is the default value
+            if getattr(func, '_err_pubsub_sub', False): # False is the default value
                 print("pubsub routing %s, from %s.%s",
                               func.__name__,
                               func._err_pubsub_sub)
                 new_sub = Sub(
-                    func._err_pubsub_sub,
                     func._err_pubsub_project,
+                    func._err_pubsub_sub,
                     func)
                 self.subs.append(new_sub)
 
