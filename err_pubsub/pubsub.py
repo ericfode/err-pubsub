@@ -63,7 +63,6 @@ APubSub = te.TypedDict('APubSub', {'PROJECT': str, 'SUBSCRIPTION': str, 'TOPIC':
 
 PubSubConfig = te.TypedDict('PubSubConfig', {'SERVICE_ACCOUNT_JSON': typing.Optional[str] }) 
 
-
 class Sub():
     def __init__(self, project, topic, sub, callback: typing.Callable[[str], None]):
         self.topic_name: str ='projects/{project_id}/topics/{topic}'.format(
@@ -101,7 +100,7 @@ class PubSub(BotPlugin):
         super().__init__(*args, **kwargs)
     
 
-    def get_configuration_template(self) -> PubSubConfig:
+    def get_configuration_template(self):
        return {'SERVICE_ACCOUNT_JSON': None }
 
     def check_configuration(self, configuration):
