@@ -105,6 +105,7 @@ class PubSub(BotPlugin):
        return {'SERVICE_ACCOUNT_JSON': None }
 
     def check_configuration(self, configuration):
+        print("checking config")
         if not isinstance(configuration , PubSubConfig):
             raise errbot.ValidationException('PubSubConfig is broken')
         super().check_configuration(configuration)
