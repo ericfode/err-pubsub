@@ -3,18 +3,17 @@ from inspect import getmembers, ismethod
 from errbot import BotPlugin, botcmd
 import errbot
 from google.cloud import pubsub_v1
-from google.auth import jwt
+from google.oauth2 import service_account
 import json
 import typing
 import typing_extensions as te
 import logging
-log = logging.getLogger(__name__)
 from typing import Callable
 
 
 def _tag_subhook(func, project, sub):
-    log.info(f"webhooks:  Flag to bind {sub} to {getattr(func, '__name__', func)}")
-    func._err_pubsub_sub =sub 
+    print(f"webhooks:  Flag to bind {sub} to {getattr(func, '__name__', func)}")
+    func._err_pubsub_sub = sub 
     func._err_pubsub_project = project
     return func
 
@@ -22,59 +21,51 @@ def _tag_subhook(func, project, sub):
 def subhook(project: str,
             sub: str):
     """
-    Decorator for webhooks
+    Decorator for subscribers to google PubSub
 
-    :param uri_rule:
-        The URL to use for this webhook, as per Flask request routing syntax.
-        For more information, see:
+    :param project:
+        The google project in which the pubsub stream lives
+    :param sub:
+        The name of the subscription to use in the project
 
-        * http://flask.pocoo.org/docs/1.0/quickstart/#routing
-        * http://flask.pocoo.org/docs/1.0/api/#flask.Flask.route
-    :param methods:
-        A tuple of allowed HTTP methods. By default, only GET and POST
-        are allowed.
-    :param form_param:
-        The key who's contents will be passed to your method's `payload` parameter.
-        This is used for example when using the `application/x-www-form-urlencoded`
-        mimetype.
-    :param raw:
-        When set to true, this overrides the request decoding (including form_param) and
-        passes the raw http request to your method's `payload` parameter.
-        The value of payload will be a Flask
-        `Request <http://flask.pocoo.org/docs/1.0/api/#flask.Request>`_.
-
-    This decorator should be applied to methods of :class:`~errbot.botplugin.BotPlugin`
-    classes to turn them into webhooks which can be reached on Err's built-in webserver.
-    The bundled *Webserver* plugin needs to be configured before these URL's become reachable.
+    This decorator allows one to react to a message on a google pub sub stream
 
     Methods with this decorator are expected to have a signature like the following::
 
-        @webhook
-        def a_webhook(self, payload):
+        @subhook(project='a-test-project', sub='a-test-sub')
+        def a_webhook(self, message):
+            message.ack()
             pass
     """
     def wrapped_sub(func):
         return  _tag_subhook(func, project, sub)
     return wrapped_sub
 
-APubSub = te.TypedDict('APubSub', {'PROJECT': str, 'SUBSCRIPTION': str, 'TOPIC':str})
-
 PubSubConfig = te.TypedDict('PubSubConfig', {'SERVICE_ACCOUNT_JSON': typing.Optional[str] }) 
 
 class Sub():
-    def __init__(self, project, sub, callback: typing.Callable[[str], None]):
-        self.subscription_name: str='projects/{project_id}/subscriptions/{sub}'.format(
-            project_id=project,
-            sub=sub)
-        self.project: str  = project
-        self.callback: typing.Callable[[str], None] = callback
+    def __init__(self, project, sub, callback):
+        self.project: str = project
+        self.sub = sub
+        self.callback = callback
+        self.subscription_name = None
+        self.result = None
 
-    def activate(self, subscriber):
-        print("creating sub")
-        print("activating sub")
-        print(self.subscription_name)
-        subscriber.subscribe(self.subscription_name,
-                            self.callback)
+    def __hash__(self):
+        return self.callback.__hash__()
+    
+    def __eq__(self,other):
+        if isinstance(other, Sub) and other.callback:
+            return self.callback.__eq__(other.callback)
+        else:
+            return False
+
+    def activate(self, log, subscriber):
+        log.info("creating sub")
+        log.info("activating sub")
+        self.subscription_name =subscriber.subscription_path(self.project, self.sub)
+        log.info(self.subscription_name)
+        self.result = subscriber.subscribe(self.subscription_name,callback=self.callback)
 
 
 class PubSub(BotPlugin):
@@ -89,51 +80,51 @@ class PubSub(BotPlugin):
         self.audience = None
         self.service_account_info = None
         self.subscriber = None
-        self.subs = []
-        print("INIT")
+        self.subs = set()
         super().__init__(*args, **kwargs)
-    
 
     def get_configuration_template(self):
-       return {'SERVICE_ACCOUNT_JSON': None }
+        print("Get")
+        return {'SERVICE_ACCOUNT_JSON': 'value'}
 
     def check_configuration(self, configuration):
-        if not isinstance(configuration , PubSubConfig):
-            raise errbot.ValidationException('PubSubConfig is broken')
+        print("Check")
         super().check_configuration(configuration)
 
-    def configure(self, configuration: typing.Mapping) -> None:
-        self.config = configuration
+    def configure(self, configuration) -> None:
+        print("PRECONFIG")
+        if configuration is not None:
+            self.config = configuration
         print("CONFIG")
         if self.config is not None and 'SERVICE_ACCOUNT_JSON' in self.config:
-            self.service_account_info = json.load(open(self.config['SERVICE_ACCOUNT_JSON']))
-        self.audience = "https://pubsub.googleapis.com/google.pubsub.v1.Subscriber"
+            self.service_account_info = self.config['SERVICE_ACCOUNT_JSON']
 
     def reset_pubsub(self):
         """Zap everything for unittests"""
         # TODO: Maybe we should unsubsribe?
         self.subscriber = pubsub_v1.SubscriberClient()
-        self.subs = {}
+        self.subs = set()
 
     def find_subs(self, obj):
         """Checks a plugin for sns listeners and attaches callbacks if they are needed"""
         classname = obj.__class__.__name__
-        print("Checking %s for pubsub hooks", classname)
+        self.log.info("Checking %s for pubsub hooks", classname)
         for name, func in getmembers(obj, ismethod):
             if getattr(func, '_err_pubsub_sub', False): # False is the default value
-                print("pubsub routing %s, from %s.%s",
-                              func.__name__,
-                              func._err_pubsub_sub)
-                new_sub = Sub(
-                    func._err_pubsub_project,
-                    func._err_pubsub_sub,
-                    func)
-                self.subs.append(new_sub)
+                self.log.info("pubsub routing %s, from %s", func.__name__, func._err_pubsub_sub)
+                new_sub = Sub(func._err_pubsub_project, func._err_pubsub_sub, func)
+                new_sub2 = Sub(func._err_pubsub_project, func._err_pubsub_sub, func)
+                print(new_sub==new_sub2)
+                self.subs.add(new_sub)
 
     def activate(self):
         self.log.info('Starting PubSubListener')
         self.log.info('Where is my log')
-        self.subscriber = pubsub_v1.SubscriberClient()
+        if self.service_account_info:
+            credentials = service_account.Credentials.from_service_account_file(self.service_account_info)
+            self.subscriber = pubsub_v1.SubscriberClient(credentials=credentials)
+        else:
+            self.subscriber = pubsub_v1.SubscriberClient()
         super().activate()
         pm = self._bot.plugin_manager
         plugs = pm.get_all_active_plugins()
@@ -146,6 +137,8 @@ class PubSub(BotPlugin):
             for sub in self.subs:
                 self.log.info('listening to sub: {sub}'.format(sub=sub.subscription_name))
                 try:
-                    sub.activate(self.subscriber)
-                except Exception:
+                    sub.activate(self.log, self.subscriber)
+                except Exception as e:
+                    self.log.info("there was a problem")
+                    self.log.exception(e)
                     self.log.exception('Starting subscriber failed')
