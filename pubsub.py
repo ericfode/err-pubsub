@@ -50,22 +50,22 @@ class Sub():
         self.callback = callback
         self.subscription_name = None
         self.result = None
+        self.activated = False
 
     def __hash__(self):
         return self.callback.__hash__()
     
     def __eq__(self,other):
-        if isinstance(other, Sub) and other.callback:
-            return self.callback.__eq__(other.callback)
-        else:
-            return False
+        return self.callback == other.callback
 
     def activate(self, log, subscriber):
-        log.info("creating sub")
-        log.info("activating sub")
-        self.subscription_name =subscriber.subscription_path(self.project, self.sub)
-        log.info(self.subscription_name)
-        self.result = subscriber.subscribe(self.subscription_name,callback=self.callback)
+        if self.activated == False:
+            log.info("creating sub")
+            log.info("activating sub")
+            self.subscription_name=subscriber.subscription_path(self.project, self.sub)
+            log.info(self.subscription_name)
+            self.result = subscriber.subscribe(self.subscription_name,callback=self.callback)
+            self.activated = True
 
 
 class PubSub(BotPlugin):
@@ -84,18 +84,14 @@ class PubSub(BotPlugin):
         super().__init__(*args, **kwargs)
 
     def get_configuration_template(self):
-        print("Get")
         return {'SERVICE_ACCOUNT_JSON': 'value'}
 
     def check_configuration(self, configuration):
-        print("Check")
         super().check_configuration(configuration)
 
     def configure(self, configuration) -> None:
-        print("PRECONFIG")
         if configuration is not None:
             self.config = configuration
-        print("CONFIG")
         if self.config is not None and 'SERVICE_ACCOUNT_JSON' in self.config:
             self.service_account_info = self.config['SERVICE_ACCOUNT_JSON']
 
@@ -114,12 +110,10 @@ class PubSub(BotPlugin):
                 self.log.info("pubsub routing %s, from %s", func.__name__, func._err_pubsub_sub)
                 new_sub = Sub(func._err_pubsub_project, func._err_pubsub_sub, func)
                 new_sub2 = Sub(func._err_pubsub_project, func._err_pubsub_sub, func)
-                print(new_sub==new_sub2)
                 self.subs.add(new_sub)
 
     def activate(self):
         self.log.info('Starting PubSubListener')
-        self.log.info('Where is my log')
         if self.service_account_info:
             credentials = service_account.Credentials.from_service_account_file(self.service_account_info)
             self.subscriber = pubsub_v1.SubscriberClient(credentials=credentials)
@@ -132,7 +126,7 @@ class PubSub(BotPlugin):
             for p in plugs:
                 self.find_subs(p)
 
-        print("subs" , self.subs)
+        self.log.info("subs %s" , self.subs)
         if self.subs is not None:
             for sub in self.subs:
                 self.log.info('listening to sub: {sub}'.format(sub=sub.subscription_name))
