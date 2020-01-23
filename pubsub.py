@@ -1,19 +1,14 @@
-
 from inspect import getmembers, ismethod
-from errbot import BotPlugin, botcmd
-import errbot
+from errbot import BotPlugin
 from google.cloud import pubsub_v1
 from google.oauth2 import service_account
-import json
 import typing
 import typing_extensions as te
-import logging
-from typing import Callable
 
 
 def _tag_subhook(func, project, sub):
     print(f"webhooks:  Flag to bind {sub} to {getattr(func, '__name__', func)}")
-    func._err_pubsub_sub = sub 
+    func._err_pubsub_sub = sub
     func._err_pubsub_project = project
     return func
 
@@ -38,10 +33,13 @@ def subhook(project: str,
             pass
     """
     def wrapped_sub(func):
-        return  _tag_subhook(func, project, sub)
+        return _tag_subhook(func, project, sub)
     return wrapped_sub
 
-PubSubConfig = te.TypedDict('PubSubConfig', {'SERVICE_ACCOUNT_JSON': typing.Optional[str] }) 
+
+PubSubConfig = te.TypedDict('PubSubConfig',
+                            {'SERVICE_ACCOUNT_JSON': typing.Optional[str]})
+
 
 class Sub():
     def __init__(self, project, sub, callback):
@@ -54,17 +52,19 @@ class Sub():
 
     def __hash__(self):
         return self.callback.__hash__()
-    
-    def __eq__(self,other):
+
+    def __eq__(self, other):
         return self.callback == other.callback
 
     def activate(self, log, subscriber):
-        if self.activated == False:
+        if not self.activated:
             log.info("creating sub")
             log.info("activating sub")
-            self.subscription_name=subscriber.subscription_path(self.project, self.sub)
+            self.subscription_name = subscriber.subscription_path(self.project,
+                                                                  self.sub)
             log.info(self.subscription_name)
-            self.result = subscriber.subscribe(self.subscription_name,callback=self.callback)
+            self.result = subscriber.subscribe(self.subscription_name,
+                                               callback=self.callback)
             self.activated = True
 
 
@@ -106,17 +106,21 @@ class PubSub(BotPlugin):
         classname = obj.__class__.__name__
         self.log.info("Checking %s for pubsub hooks", classname)
         for name, func in getmembers(obj, ismethod):
-            if getattr(func, '_err_pubsub_sub', False): # False is the default value
-                self.log.info("pubsub routing %s, from %s", func.__name__, func._err_pubsub_sub)
-                new_sub = Sub(func._err_pubsub_project, func._err_pubsub_sub, func)
-                new_sub2 = Sub(func._err_pubsub_project, func._err_pubsub_sub, func)
+            if getattr(func, '_err_pubsub_sub', False):
+                self.log.info("pubsub routing %s, from %s",
+                              func.__name__, func._err_pubsub_sub)
+                new_sub = Sub(func._err_pubsub_project,
+                              func._err_pubsub_sub, func)
                 self.subs.add(new_sub)
 
     def activate(self):
         self.log.info('Starting PubSubListener')
         if self.service_account_info:
-            credentials = service_account.Credentials.from_service_account_file(self.service_account_info)
-            self.subscriber = pubsub_v1.SubscriberClient(credentials=credentials)
+            creds = service_account.Credentials
+            credentials = creds.from_service_account_file(
+                self.service_account_info)
+            self.subscriber = pubsub_v1.SubscriberClient(
+                credentials=credentials)
         else:
             self.subscriber = pubsub_v1.SubscriberClient()
         super().activate()
